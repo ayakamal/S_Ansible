@@ -1,0 +1,13 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  #remote_user: ubuntu
+  become: yes
+  #vars_prompt:
+   # - name: password
+    #  prompt: please enter your password
+     # private: yes  
+  roles:
+    - web   
+  
