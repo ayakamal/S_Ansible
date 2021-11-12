@@ -1,0 +1,158 @@
+- name: Apt update
+  apt:
+    update_cache: yes
+  #when: ansible_facts["os_family"]=="Debian" or update= "yes"  
+    
+- name: Install java
+  apt:
+    name: openjdk-8-jdk
+    state: present
+
+- name: Create dir /opt
+  file:
+    path: "opt"
+    state: directory    
+
+- name: cd /opt/
+  command: bash -lc "cd /opt/ && pwd" 
+  register: results
+- name: print stdout
+  debug:
+    var: results.stdout  
+  #chdir=/opt/
+  #"cd opt/"
+
+#- name: download nexus
+ # get_url:
+  #  url: https://download.sonatype.com/nexus/3/latest-unix.tar.gz
+   # dest: /opt/
+
+- name: Download & untar nexus
+  ansible.builtin.unarchive:
+    src: https://download.sonatype.com/nexus/3/latest-unix.tar.gz
+    dest: /opt/
+    remote_src: "yes"
+
+- name: Recursively remove tar.gz
+  ansible.builtin.file:
+    path: /opt/nexus-3.36.0-01-unix.tar.gz
+    state: absent
+- name: ls before renaming
+  command: "ls /opt"  
+  register: results 
+- name: print ls before renaming
+  debug:
+    var: results.stdout     
+
+- name: Find nexus-3* and store it in result
+  find:
+    paths: /opt
+    file_type: directory
+    patterns: 'nexus-3*'
+  register: result
+
+- name: Print result
+  debug: 
+    var: result.files[0]['path']    
+
+- name: Rename result to nexus
+  command: mv "{{ result.files[0]['path'] }}" /opt/nexus
+  when: result.matched == 1
+  
+- name: ls after renaming to nexus
+  command: "ls /opt/"  
+  register: results 
+- name: print ls after renaming to nexus
+  debug:
+    var: results.stdout  
+
+- name: Add user nexus
+  user:
+    name: nexus
+
+- name: User nexus in sudoers configuration
+  lineinfile:
+    path: /etc/sudoers
+    state: present
+    line: 'nexus   ALL=(ALL)       NOPASSWD: ALL'
+
+- name: Change nexus permission
+  file:
+    path: /opt/nexus
+    owner: "nexus"
+    group: "nexus"   
+    recurse: yes
+    
+- name: Change sonatype permission
+  file:
+    path: /opt/sonatype-work
+    owner: "nexus"
+    group: "nexus"  
+    recurse: yes
+
+- name: Uncomment line in file
+  replace:
+    path: /opt/nexus/bin/nexus.rc
+    regexp: '^#(.*run_as_user=\"\".*)'
+    replace: '\1'
+
+- name: Replace with run_as_user="nexus"
+  ansible.builtin.lineinfile:
+    path: /opt/nexus/bin/nexus.rc
+    regexp: 'run_as_user=*'
+    line: run_as_user="nexus"
+
+- name: cat 
+  command: "cat /opt/nexus/bin/nexus.rc"  
+  register: results 
+- name: print cat /opt/nexus/bin/nexus.rc
+  debug:
+    var: results.stdout  
+
+- name: Creating nexus.service file 
+  copy:
+    dest: "/etc/systemd/system/nexus.service"
+    content: |
+      [Unit]
+      Description=nexus service
+      After=network.target
+
+      [Service]
+      Type=forking
+      LimitNOFILE=65536
+      User=nexus
+      Group=nexus
+      ExecStart=/opt/nexus/bin/nexus start
+      ExecStop=/opt/nexus/bin/nexus stop
+      User=nexus
+      Restart=on-abort
+
+      [Install]
+      WantedBy=multi-user.target
+- name: cat 
+  command: "cat /etc/systemd/system/nexus.service"  
+  register: results 
+- name: print /etc/systemd/system/nexus.service
+  debug:
+    var: results.stdout 
+
+- name: Start service nexus
+  ansible.builtin.service:
+    name: nexus
+    state: started   
+    
+- name: Make sure nexus service is running
+  ansible.builtin.systemd:
+    state: started
+    name: nexus
+    daemon_reload: yes
+
+- name: Service status
+  command: "systemctl status nexus"  
+  register: results 
+- name: print service status
+  debug:
+    var: results.stdout     
+
+# ports running
+# sudo netstat -plnt
